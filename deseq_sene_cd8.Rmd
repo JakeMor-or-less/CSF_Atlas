@@ -1,0 +1,535 @@
+---
+title: "DESeq2_cd8_sene"
+author: "Jacob Morales"
+date: "2025-07-31"
+output: html_document
+---
+
+```{r}
+# Load packages
+library(DESeq2)
+library(ggplot2)
+library(pheatmap)
+
+set.seed(42)
+
+setwd("C:/Users/thebu/OneDrive/Desktop/Senescence Project/CSF Atlas/CSF_Atlas")
+```
+
+
+```{r}
+# Loading count data
+countData <- read.csv("cd8_pseudobulk_raw_counts_for_deseq2.csv", row.names = 1)
+
+metadata <- read.csv("cd8_pseudobulk_metadata_for_deseq2.csv", row.names = 1)
+
+# Check that sample names match
+all(rownames(metadata) == colnames(countData))
+```
+```{r}
+# Convert putative_sen to a factor with meaningful labels
+metadata$putative_sen <- factor(metadata$putative_sen, 
+                               levels = c(0, 1), 
+                               labels = c("non_senescent", "senescent"))
+
+# Convert sample to factor (good practice for paired designs)
+metadata$sample <- factor(metadata$sample)
+
+# Check the conversion
+table(metadata$putative_sen)
+```
+
+
+
+```{r}
+# Create DESeq2 object with paired design
+dds <- DESeqDataSetFromMatrix(
+  countData = countData,
+  colData = metadata,
+  design = ~ sample + putative_sen
+)
+
+# Look at the object
+dds
+```
+
+```{r}
+# Check how many genes have low counts
+summary(rowSums(counts(dds)))
+
+# Filter: keep genes with at least 10 counts across all samples
+keep <- rowSums(counts(dds)) >= 10
+dds <- dds[keep,]
+
+# See how many genes remain
+dds
+```
+
+
+```{r}
+# Run DESeq2 (this may take a minute or two)
+dds <- DESeq(dds)
+
+# Check what comparisons were made
+resultsNames(dds)
+```
+
+
+```{r}
+# Extract results for senescent vs non-senescent comparison
+res <- results(dds, name = "putative_sen_senescent_vs_non_senescent")
+
+# Look at the results summary
+summary(res)
+```
+
+
+```{r}
+# Order by p-value and look at top hits
+res_ordered <- res[order(res$padj),]
+head(res_ordered, 10)
+```
+
+
+```{r}
+# Count significant genes at different thresholds  
+sum(res$padj < 0.05, na.rm = TRUE)
+sum(res$padj < 0.01, na.rm = TRUE)
+
+# Look at most significant upregulated genes
+head(res_ordered[res_ordered$log2FoldChange > 0,], 5)
+```
+
+
+```{r}
+# Create volcano plot
+library(ggplot2)
+
+# Prepare data for plotting
+res_df <- as.data.frame(res)
+res_df$gene <- rownames(res_df)
+
+# Create volcano plot
+ggplot(res_df, aes(x = log2FoldChange, y = -log10(padj))) +
+  geom_point(alpha = 0.6, size = 1) +
+  geom_point(data = subset(res_df, padj < 0.05 & log2FoldChange > 1), 
+             color = "red", size = 1) +
+  geom_point(data = subset(res_df, padj < 0.05 & log2FoldChange < -1), 
+             color = "blue", size = 1) +
+  labs(title = "Senescent vs Non-senescent CD8 T cells",
+       x = "Log2 Fold Change", 
+       y = "-Log10 Adjusted P-value") +
+  theme_minimal()
+```
+
+
+```{r}
+# Better volcano plot - show all significant genes
+ggplot(res_df, aes(x = log2FoldChange, y = -log10(padj))) +
+  geom_point(alpha = 0.6, size = 1, color = "gray") +
+  geom_point(data = subset(res_df, padj < 0.05 & log2FoldChange > 0), 
+             color = "red", size = 1, alpha = 0.7) +
+  geom_point(data = subset(res_df, padj < 0.05 & log2FoldChange < 0), 
+             color = "blue", size = 1, alpha = 0.7) +
+  labs(title = "Senescent vs Non-senescent CD8 T cells",
+       x = "Log2 Fold Change", 
+       y = "-Log10 Adjusted P-value") +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
+  theme_minimal()
+```
+
+```{r}
+# Look at the downregulated significant genes
+down_genes <- subset(res_df, padj < 0.05 & log2FoldChange < 0)
+nrow(down_genes)
+head(down_genes[order(down_genes$padj),])
+```
+
+
+```{r}
+# Enhanced volcano plot with fold change cutoffs
+volcano_plot <- ggplot(res_df, aes(x = log2FoldChange, y = -log10(padj))) +
+  geom_point(alpha = 0.6, size = 0.8, color = "gray60") +
+  geom_point(data = subset(res_df, padj < 0.05 & log2FoldChange > 1), 
+             color = "red", size = 0.8, alpha = 0.7) +
+  geom_point(data = subset(res_df, padj < 0.05 & log2FoldChange < -1), 
+             color = "blue", size = 1.2, alpha = 0.8) +  # Make blue dots bigger
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", alpha = 0.7) +
+  geom_vline(xintercept = c(-1, 1), linetype = "dashed", alpha = 0.7) +  # FC cutoffs
+  labs(title = "Senescent vs Non-senescent CD8 T cells",
+       subtitle = paste("Up:", sum(res$padj < 0.05 & res$log2FoldChange > 0, na.rm=T), 
+                        "| Down:", sum(res$padj < 0.05 & res$log2FoldChange < 0, na.rm=T)),
+       x = "Log2 Fold Change", y = "-Log10 Adjusted P-value") +
+  theme_minimal()
+ggsave("volcano_plot.png", plot = volcano_plot, width = 8, height = 6, dpi = 300)
+
+```
+
+
+
+```{r}
+# Custom MA plot
+ma_plot <- ggplot(res_df, aes(x = log10(baseMean), y = log2FoldChange)) +
+  geom_point(alpha = 0.6, size = 0.8, color = "gray60") +
+  geom_point(data = subset(res_df, padj < 0.05), 
+             color = "red", size = 0.8, alpha = 0.7) +
+  geom_hline(yintercept = 0, linetype = "solid", alpha = 0.7) +
+  geom_hline(yintercept = c(-1, 1), linetype = "dashed", alpha = 0.7) +
+  labs(title = "MA Plot: Senescent vs Non-senescent",
+       x = "Log10 Mean Expression", 
+       y = "Log2 Fold Change") +
+  theme_minimal()
+ggsave("MA_plot.png", plot = ma_plot, width = 8, height = 6, dpi = 300)
+
+```
+
+
+
+```{r}
+# Get normalized counts for heatmap
+vsd <- vst(dds, blind = FALSE)
+```
+
+
+```{r}
+# Get top 50 most significant genes
+top_genes <- head(rownames(res_ordered), 50)
+
+# Extract the matrix for heatmap
+mat <- assay(vsd)[top_genes, ]
+mat <- mat - rowMeans(mat)  # Center the data (subtract row means)
+
+# Create annotation for samples
+annotation_col <- data.frame(
+  Senescence = metadata$putative_sen,
+  row.names = rownames(metadata)
+)
+
+# Create heatmap
+library(pheatmap)
+pheatmap(mat, 
+         annotation_col = annotation_col,
+         scale = "none",  # Already centered above
+         show_rownames = TRUE,
+         show_colnames = FALSE,
+         cluster_cols = TRUE,
+         cluster_rows = TRUE,
+         width = 8,      
+         height = 10,
+         filename = "cd8_senescence_heatmap.png",
+         main = "Top 50 Differentially Expressed Genes (CD8 T Cells)")
+```
+
+
+```{r}
+# Load the senescence gene list
+cs_genes <- read.csv("cs_gene_list.csv")
+
+# Check the structure - what column has the gene names?
+head(cs_genes)
+colnames(cs_genes)
+```
+
+
+```{r}
+# Extract gene names from your senescence list
+cs_gene_names <- cs_genes$Gene
+```
+
+```{r}
+# Check how many are in your DESeq2 results
+genes_in_data <- cs_gene_names[cs_gene_names %in% rownames(res)]
+length(genes_in_data)  
+```
+
+
+```{r}
+# Create a subset of results for senescence genes
+cs_results <- res[genes_in_data, ]
+cs_results_df <- as.data.frame(cs_results)
+cs_results_df$gene <- rownames(cs_results_df)
+```
+
+
+```{r}
+# Check significant senescence genes
+sig_cs_genes <- subset(cs_results_df, padj < 0.05)
+nrow(sig_cs_genes) 
+```
+
+
+```{r}
+# Look at the top significant senescence genes
+head(sig_cs_genes[order(sig_cs_genes$padj),])
+```
+
+
+```{r}
+# Load packages
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(msigdbr)
+```
+
+
+```{r}
+# Get significant upregulated genes
+up_genes <- rownames(subset(res, padj < 0.05 & log2FoldChange > 0))
+length(up_genes)
+
+# Get significant downregulated genes  
+down_genes <- rownames(subset(res, padj < 0.05 & log2FoldChange < 0))
+length(down_genes)
+```
+
+
+```{r}
+# 1. For ORA: Get significant gene lists
+sig_up_genes <- rownames(subset(res, padj < 0.05 & log2FoldChange > 0))
+sig_down_genes <- rownames(subset(res, padj < 0.05 & log2FoldChange < 0))
+all_sig_genes <- rownames(subset(res, padj < 0.05))
+```
+
+
+```{r}
+# 2. For GSEA: Ranked gene list (already started)
+gene_list <- res$log2FoldChange
+names(gene_list) <- rownames(res)
+gene_list <- gene_list[!is.na(gene_list)]
+gene_list <- sort(gene_list, decreasing = TRUE)
+```
+
+
+```{r}
+# 3. Background/universe for ORA
+background_genes <- rownames(res)
+```
+
+
+```{r}
+# Check your numbers
+length(sig_up_genes)     # Upregulated genes
+length(sig_down_genes)   # Downregulated genes  
+length(gene_list)        # Total genes for GSEA
+```
+```{r}
+# Convert gene symbols to Entrez IDs for ORA
+sig_up_entrez <- bitr(sig_up_genes, 
+                      fromType = "SYMBOL", 
+                      toType = "ENTREZID", 
+                      OrgDb = org.Hs.eg.db)
+
+sig_down_entrez <- bitr(sig_down_genes, 
+                        fromType = "SYMBOL", 
+                        toType = "ENTREZID", 
+                        OrgDb = org.Hs.eg.db)
+
+background_entrez <- bitr(background_genes, 
+                          fromType = "SYMBOL", 
+                          toType = "ENTREZID", 
+                          OrgDb = org.Hs.eg.db)
+
+# For GSEA: convert the ranked list
+gene_list_entrez <- bitr(names(gene_list), 
+                         fromType = "SYMBOL", 
+                         toType = "ENTREZID", 
+                         OrgDb = org.Hs.eg.db)
+
+# Match and create new ranked list
+gene_list_gsea <- gene_list[gene_list_entrez$SYMBOL]
+names(gene_list_gsea) <- gene_list_entrez$ENTREZID
+gene_list_gsea <- sort(gene_list_gsea, decreasing = TRUE)
+
+# Check conversion success
+nrow(sig_up_entrez)    # How many converted successfully?
+nrow(gene_list_entrez)  # How many total converted?
+```
+
+
+```{r}
+# ORA for GO (upregulated genes)
+go_ora_up <- enrichGO(gene = sig_up_entrez$ENTREZID,
+                      universe = background_entrez$ENTREZID,
+                      OrgDb = org.Hs.eg.db,
+                      ont = "BP",  # Biological Process
+                      pAdjustMethod = "BH",
+                      qvalueCutoff = 0.05,
+                      readable = TRUE)
+# GSEA for GO  
+go_gsea <- gseGO(geneList = gene_list_gsea,
+                 OrgDb = org.Hs.eg.db,
+                 ont = "BP",
+                 minGSSize = 10,
+                 maxGSSize = 500,
+                 pvalueCutoff = 0.05,
+                 verbose = FALSE)
+
+# Check results
+head(go_ora_up, 10)
+head(go_gsea, 10)
+```
+```{r}
+# ORA for GO (upregulated genes)
+go_ora_down <- enrichGO(gene = sig_down_entrez$ENTREZID,
+                      universe = background_entrez$ENTREZID,
+                      OrgDb = org.Hs.eg.db,
+                      ont = "BP",  # Biological Process
+                      pAdjustMethod = "BH",
+                      qvalueCutoff = 0.05,
+                      readable = TRUE)
+```
+
+
+```{r}
+# 1. Check if any results exist at all
+nrow(go_ora_up)
+nrow(go_ora_down)
+nrow(go_gsea)
+
+# 2. Look at results with relaxed cutoff
+head(go_ora_up@result, 10)  # See top results regardless of significance
+head(go_ora_down@result, 10)
+head(go_gsea@result, 10)
+```
+
+
+```{r}
+# 3. Try more relaxed parameters
+go_ora_relaxed <- enrichGO(gene = sig_up_entrez$ENTREZID,
+                          universe = background_entrez$ENTREZID,
+                          OrgDb = org.Hs.eg.db,
+                          ont = "BP",
+                          pAdjustMethod = "BH",
+                          qvalueCutoff = 0.2,  # More relaxed
+                          pvalueCutoff = 0.1,  # More relaxed
+                          readable = TRUE)
+# 3. Try more relaxed parameters
+#go_ora_down_relaxed <- enrichGO(gene = sig_down_entrez$ENTREZID,
+#                          universe = background_entrez$ENTREZID,
+#                          OrgDb = org.Hs.eg.db,
+#                          ont = "BP",
+#                          pAdjustMethod = "BH",
+#                          qvalueCutoff = 0.2,  # More relaxed
+#                          pvalueCutoff = 0.1,  # More relaxed
+#                          readable = TRUE)
+
+# 4. Try GSEA with different parameters
+go_gsea_relaxed <- gseGO(geneList = gene_list_gsea,
+                        OrgDb = org.Hs.eg.db,
+                        ont = "BP",
+                        minGSSize = 5,        # Smaller gene sets
+                        maxGSSize = 800,      # Larger gene sets
+                        pvalueCutoff = 0.1,   # More relaxed
+                        nPermSimple = 10000,  # More permutations
+                        verbose = FALSE)
+
+head(go_ora_relaxed, 10)
+head(go_gsea_relaxed, 10)
+```
+
+
+```{r}
+# First check what's in the results
+head(go_ora_up@result, 20)  # Look at top 20 regardless of significance
+
+# Extract the results table directly
+up_results <- go_ora_up@result
+
+# Get top 20 by p-value (even if not significant)
+top_up <- head(up_results[order(up_results$pvalue),], 20)
+
+go_up <- ggplot(top_up, aes(x = Count, y = reorder(Description, -log10(pvalue)))) +
+  geom_point(aes(size = Count, color = pvalue)) +
+  scale_color_gradient(low = "red", high = "blue", name = "P-value") +
+  labs(title = "Top 20 GO Terms: Upregulated Genes",
+       subtitle = "Ranked by p-value (none significant at q<0.05)",
+       x = "Gene Count", 
+       y = "GO Terms") +
+  theme_linedraw() +
+  theme(axis.text.y = element_text(size = 10,
+                                   face = "bold"))
+go_up
+
+# Save with specific size
+ggsave("go_up_plot.png", plot = go_up, width = 12, height = 8, dpi = 300)
+```
+
+
+
+
+
+```{r}
+# Since you have significant results, these should work:
+dotplot(go_ora_down, 
+        showCategory = 20,        # Top 20 terms
+        title = "GO Terms: Downregulated Genes") +
+  theme(axis.text.y = element_text(size = 9))
+
+# Bar plot alternative
+barplot(go_ora_down, 
+        showCategory = 20,
+        title = "GO Biological Processes: Downregulated Genes") +
+  theme(axis.text.y = element_text(size = 9))
+```
+```{r}
+# Manual plot
+go_down_sig <- ggplot(go_ora_down, aes(x = Count, y = reorder(Description, -log10(pvalue)))) +
+  geom_point(aes(size = Count, color = p.adjust)) +
+  scale_color_gradient(low = "red", high = "blue", name = "P.adjust") +
+  labs(title = "Top GO Terms: Downregulated Genes",
+       subtitle = "Significant at q<0.05",
+       x = "Gene Count", 
+       y = "GO Terms") +
+  theme_linedraw() +
+  theme(axis.text.y = element_text(size = 10,           # Larger text
+                                   face = "bold"))    # Optional: text color)
+go_down_sig
+
+# Save with specific size
+ggsave("go_down_sig_plot.png", plot = go_down_sig, width = 12, height = 8, dpi = 300)
+```
+
+
+```{r}
+# Extract results table
+down_results <- go_ora_down@result
+
+# Get top 20 by p-value
+top_down <- head(down_results[order(down_results$pvalue),], 20)
+
+# Manual plot
+go_down <- ggplot(top_down, aes(x = Count, y = reorder(Description, -log10(pvalue)))) +
+  geom_point(aes(size = Count, color = pvalue)) +
+  scale_color_gradient(low = "red", high = "blue", name = "P-value") +
+  labs(title = "Top 20 GO Terms: Downregulated Genes",
+       subtitle = paste(sum(down_results$p.adjust < 0.05), "significant at q<0.05"),
+       x = "Gene Count", 
+       y = "GO Terms") +
+  theme_linedraw() +
+  theme(axis.text.y = element_text(size = 10,           # Larger text
+                                   face = "bold"))    # Optional: text color)
+go_down
+
+# Save with specific size
+ggsave("go_down_plot.png", plot = go_down, width = 12, height = 8, dpi = 300)
+```
+
+
+```{r}
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
