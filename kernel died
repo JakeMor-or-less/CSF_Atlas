@@ -1,0 +1,252 @@
+old = cd8[(cd8.obs['organ'] == 'CSF') & 
+                    (cd8.obs['disease'] == 'HC') &
+                    (cd8.obs['age_comparison'] == '≥60 years')].copy()
+
+young = cd8[(cd8.obs['organ'] == 'CSF') & 
+                    (cd8.obs['disease'] == 'IIH') &
+                    (cd8.obs['age_comparison'] == '≤25 years')].copy()
+
+ad = cd8[(cd8.obs['organ'] == 'CSF') & 
+                    (cd8.obs['disease'] == 'AD')].copy()
+
+old_young = old.concatenate(young)
+adata_cd8_cam = old_young.concatenate(ad)
+
+
+
+
+
+# Filter to only include the three groups of interest
+comparison_data = adata_cd8_cam.obs[adata_cd8_cam.obs['disease'] != 'exclude']
+
+# Calculate senescence percentages grouped by BOTH cell type AND disease group
+senescence_by_group_cell = comparison_data.groupby(['cell_type', 'disease'])['putative_sen'].agg(['mean', 'count', 'std']).reset_index()
+senescence_by_group_cell['percent_senescent'] = senescence_by_group_cell['mean'] * 100
+senescence_by_group_cell['sem'] = (senescence_by_group_cell['std'] / np.sqrt(senescence_by_group_cell['count'])) * 100
+
+# Print summary statistics
+print("cd8 senescence by cell type and disease group:")
+print(senescence_by_group_cell)
+
+# Calculate 95% confidence intervals
+senescence_by_group_cell['ci_95'] = senescence_by_group_cell.apply(
+    lambda row: stats.t.ppf(0.975, row['count']-1) * row['sem'] if row['count'] > 1 else 0, 
+    axis=1
+)
+
+# CALCULATE SAMPLE-LEVEL SENESCENCE for individual points
+# Filter for CD8 T cells and calculate per-sample senescence
+cd8_obs = comparison_data[comparison_data['cell_type'] == 'CD8 T cells'].copy()
+sample_senescence = cd8_obs.groupby(['sample', 'disease'])['putative_sen'].agg(['mean', 'count']).reset_index()
+sample_senescence['percent_senescent_sample'] = sample_senescence['mean'] * 100
+
+print("\nSample-level senescence data:")
+print(sample_senescence)
+
+# Main plotting code
+plt.figure(figsize=(8, 6))
+
+# Filter for just CD8 T cells if needed
+cd8_data = senescence_by_group_cell[senescence_by_group_cell['cell_type'] == 'CD8 T cells'].copy()
+
+# Sort by disease order
+disease_order = ['Young_Control', 'Old_Control', 'AD']  # Adjust as needed
+cd8_data['disease'] = pd.Categorical(cd8_data['disease'], 
+                                      categories=disease_order, 
+                                      ordered=True)
+cd8_data = cd8_data.sort_values('disease')
+
+# Create simple bar plot
+colors = {'Young_Control': '#decbe4', 
+          'Old_Control': '#ccebc5',  
+          'AD': '#fbb4ae'}
+
+bars = plt.bar(range(len(cd8_data)), 
+               cd8_data['percent_senescent'],
+               color=[colors[d] for d in cd8_data['disease']],
+               edgecolor='black',
+               linewidth=1.5)
+
+# Add error bars
+plt.errorbar(range(len(cd8_data)), 
+             cd8_data['percent_senescent'],
+             yerr=cd8_data['ci_95'],
+             fmt='none',
+             color='black',
+             capsize=5,
+             capthick=1.5,
+             linewidth=1.5)
+
+# Add value labels
+for i, (idx, row) in enumerate(cd8_data.iterrows()):
+    # Percentage on top
+    plt.text(i, row['percent_senescent'] + row['ci_95'] + 0.2,
+             f"{row['percent_senescent']:.1f}%",
+             ha='center', va='bottom', fontweight='bold', fontsize=10)
+    
+    # Sample size inside bar
+    plt.text(i, row['percent_senescent'] + row['ci_95'] + 2,
+             f"n={int(row['count'])}",
+             ha='center', va='bottom', fontsize=9, color='black', fontweight='bold')
+
+# Customize
+plt.title('CD8 T Cell Senescence Across Disease Groups', fontsize=14, fontweight='bold')
+plt.ylim(0,15) #cd8_data['percent_senescent'].max() * 1.4)
+plt.ylabel('Senescent Cells (%)', fontsize=13)
+plt.yticks(fontsize=10, fontweight='bold')
+
+# Get current axes (this was missing in your original code)
+ax = plt.gca()
+ax.spines['top'].set_linewidth(1.5)
+ax.spines['right'].set_linewidth(1.5)
+ax.spines['bottom'].set_linewidth(1.5)
+ax.spines['left'].set_linewidth(1.5)
+ax.tick_params(axis='x', width=2, length=6)
+ax.tick_params(axis='y', width=1.5, length=6)
+
+plt.xticks(range(len(cd8_data)), 
+           ['Young\nControl', 'Old\nControl', 'AD'],
+           fontsize=11)
+
+plt.tight_layout()
+#plt.savefig('senepy_cd8_young_old_mci_ad_percentSen.png', dpi=300, bbox_inches='tight')
+#plt.savefig('senepy_cd8_young_old_mci_ad_percentSen.pdf', dpi=300, bbox_inches='tight')
+plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Filter to only include the three groups of interest
+comparison_data = adata_cd8_cam.obs[adata_cd8_cam.obs['disease'] != 'exclude']
+
+# FIRST: Calculate sample-level senescence for CD8 T cells
+cd8_obs = comparison_data[comparison_data['cell_type'] == 'CD8 T cells'].copy()
+sample_senescence = cd8_obs.groupby(['sample', 'disease'])['putative_sen'].agg(['mean', 'count']).reset_index()
+sample_senescence['percent_senescent_sample'] = sample_senescence['mean'] * 100
+
+print("\nSample-level senescence data:")
+print(sample_senescence)
+
+# SECOND: Calculate the mean of sample means for the bars
+senescence_by_group = sample_senescence.groupby('disease').agg({
+    'percent_senescent_sample': ['mean', 'std', 'count']
+}).reset_index()
+
+# Flatten column names
+senescence_by_group.columns = ['disease', 'percent_senescent', 'std', 'n_samples']
+
+# Calculate SEM and 95% CI based on number of samples
+senescence_by_group['sem'] = senescence_by_group['std'] / np.sqrt(senescence_by_group['n_samples'])
+senescence_by_group['ci_95'] = senescence_by_group.apply(
+    lambda row: stats.t.ppf(0.975, row['n_samples']-1) * row['sem'] if row['n_samples'] > 1 else 0, 
+    axis=1
+)
+
+print("\nMean of sample means by disease group:")
+print(senescence_by_group)
+
+# Main plotting code
+plt.figure(figsize=(8, 6))
+
+# Sort by disease order
+disease_order = ['Young_Control', 'Old_Control', 'AD']  # Adjust as needed
+senescence_by_group['disease'] = pd.Categorical(senescence_by_group['disease'], 
+                                                categories=disease_order, 
+                                                ordered=True)
+senescence_by_group = senescence_by_group.sort_values('disease')
+
+# Create simple bar plot
+colors = {'Young_Control': '#decbe4', 
+          'Old_Control': '#ccebc5',  
+          'AD': '#fbb4ae'}
+
+bars = plt.bar(range(len(senescence_by_group)), 
+               senescence_by_group['percent_senescent'],
+               color=[colors[d] for d in senescence_by_group['disease']],
+               edgecolor='black',
+               linewidth=1.5)
+
+# Add error bars
+plt.errorbar(range(len(senescence_by_group)), 
+             senescence_by_group['percent_senescent'],
+             yerr=senescence_by_group['ci_95'],
+             fmt='none',
+             color='black',
+             capsize=5,
+             capthick=1.5,
+             linewidth=1.5)
+
+# ADD INDIVIDUAL SAMPLE POINTS
+for i, disease in enumerate(disease_order):
+    # Get samples for this disease group
+    disease_samples = sample_senescence[sample_senescence['disease'] == disease]
+    
+    if len(disease_samples) > 0:
+        # Add some jitter to x-position to avoid overlapping points
+        n_samples = len(disease_samples)
+        jitter_range = 0.25  # Adjust this to control spread of points
+        
+        if n_samples == 1:
+            x_positions = [i]
+        else:
+            x_positions = np.linspace(i - jitter_range/2, i + jitter_range/2, n_samples)
+        
+        # Plot individual points
+        plt.scatter(x_positions, 
+                   disease_samples['percent_senescent_sample'],
+                   color='black',
+                   alpha=0.8,
+                   s=50,  # Point size
+                   zorder=10,  # Ensure points are on top
+                   edgecolors='white',
+                   linewidth=0.5)
+
+# Add value labels
+for i, (idx, row) in enumerate(senescence_by_group.iterrows()):
+    # Percentage on top
+    plt.text(i, row['percent_senescent'] + row['ci_95'] + 0.1,
+             f"{row['percent_senescent']:.1f}%",
+             ha='center', va='bottom', fontweight='bold', fontsize=10)
+    
+    # Sample size inside or below bar
+    plt.text(i, row['percent_senescent'] / 2,
+             f"n={int(row['n_samples'])}",
+             ha='center', va='center', fontsize=9, color='black', fontweight='bold')
+
+# Customize
+plt.title('CD8 T Cell Senescence Across Disease Groups', fontsize=14, fontweight='bold')
+plt.ylim(0, 42)
+plt.ylabel('Senescent Cells (%)', fontsize=13)
+plt.yticks(fontsize=10, fontweight='bold')
+
+# Get current axes
+ax = plt.gca()
+ax.spines['top'].set_linewidth(1.5)
+ax.spines['right'].set_linewidth(1.5)
+ax.spines['bottom'].set_linewidth(1.5)
+ax.spines['left'].set_linewidth(1.5)
+ax.tick_params(axis='x', width=2, length=6)
+ax.tick_params(axis='y', width=1.5, length=6)
+
+plt.xticks(range(len(senescence_by_group)), 
+           ['Young\nControl', 'Old\nControl', 'AD'],
+           fontsize=11)
+
+plt.tight_layout()
+plt.show()
