@@ -1,9 +1,3 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# In[1]:
-
-
 import anndata as ad
 import os
 import senepy as sp
@@ -19,17 +13,8 @@ random.seed(42)
 # Set working directory
 os.chdir('/fs/scratch/PAS2598/Morales/CSF_workspace/csf')
 
-# Check current working directory
-print(os.getcwd())
-
-
-# In[2]:
-
-
-# Load your h5ad file
+# Load atlas data
 cd8 = sc.read_h5ad('cd8_yo_scored_8-12-25.h5ad')
-
-# Check what you loaded
 print(cd8)
 print(f"Number of cells: {cd8.n_obs}")
 print(f"Number of genes: {cd8.n_vars}")
@@ -37,40 +22,25 @@ print(f"Number of genes: {cd8.n_vars}")
 # View the metadata
 print(cd8.obs.head())
 
-
-# In[3]:
-
-
 # Check the merged object
 print(cd8)
 print(cd8.obs['cell_type'].value_counts())
-
-
-# In[4]:
-
-
 print(cd8.obs['putative_sen'].value_counts())
-
-
-# In[5]:
-
 
 # Count cells per sample
 print("Cells per sample:")
 print(cd8.obs['sample'].value_counts().sort_index())
 
-# Or get it as a sorted table
+# as a sorted table
 sample_counts = cd8.obs['sample'].value_counts().sort_index()
 print(f"\nTotal samples: {len(sample_counts)}")
 print(f"Cells per sample range: {sample_counts.min()} - {sample_counts.max()}")
 print(f"Mean cells per sample: {sample_counts.mean():.1f}")
 
-
-# In[6]:
-
-
+# create groupings
 grouping_vars = ['sample', 'putative_sen']
 
+# create the pseudobulking function
 def pseudobulk_adata(adata, groupby_vars, layer='raw_counts'):
     """
     Pseudobulk AnnData object by specified grouping variables using raw_counts layer
@@ -150,18 +120,7 @@ print(pb_meta[['putative_sen', 'n_cells']].groupby('putative_sen').agg(['count',
 print(f"\nFirst few pseudobulk samples:")
 print(pb_meta[['putative_sen', 'n_cells']])
 
-
-# In[7]:
-
-
-# Show sample of the data
-print(f"\nFirst few pseudobulk samples:")
-print(pb_meta[['putative_sen', 'n_cells']])
-
-
-# In[9]:
-
-
+# filtering function
 def filter_pseudobulk_genes_only(counts, metadata, min_counts=3, min_sample_fraction=0.3):
     """
     Filter pseudobulk data for low count genes only
@@ -216,14 +175,3 @@ raw_counts_df.to_csv('cd8_yo_pseudobulk_raw_counts_for_deseq2.csv')
 
 # Export metadata (samples as rows)
 pb_meta_filt.to_csv('cd8_yo_pseudobulk_metadata_for_deseq2.csv')
-
-print(f"\n✅ Exported for DESeq2:")
-print(f"   - Raw counts: cd8_pseudobulk_raw_counts_for_deseq2.csv ({raw_counts_df.shape[0]} genes × {raw_counts_df.shape[1]} samples)")
-print(f"   - Metadata: cd8_pseudobulk_metadata_for_deseq2.csv ({pb_meta_filt.shape[0]} samples)")
-
-
-# In[ ]:
-
-
-
-
