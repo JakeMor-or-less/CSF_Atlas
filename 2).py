@@ -1,9 +1,3 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# In[1]:
-
-
 import os
 import senepy as sp
 import scanpy as sc
@@ -18,144 +12,24 @@ random.seed(42)
 # Set working directory
 os.chdir('/fs/scratch/PAS2598/Morales/CSF_workspace/csf')
 
-# Check current working directory
-print(os.getcwd())
-
-
-# In[2]:
-
-
+# load senepy hubs
 hubs = sp.load_hubs(species = 'Human') 
 hubs.metadata
 
-
-# In[3]:
-
-
-#hubs.literature_markers
-
-
-# In[4]:
-
-
-#hubs.senGPT
-
-
-# In[5]:
-
-
-#hubs.search_hubs_by_genes(['Cdkn2a', 'Cdkn1a', 'Il6', 'Cxcl13'])
-
-
-# In[6]:
-
-
-#hubs.search_hubs_by_genes(hubs.senGPT)
-
-
-# In[ ]:
-
-
-
-
-
-# In[7]:
-
-
-#pDC_hub = hubs.metadata[(hubs.metadata.tissue == 'blood')]
-#pDC_hub
-#hubs.merge_hubs(pDC_hub, new_name = 'blood_pDC')
-
-
-#myeloid_hub = hubs.metadata[(hubs.metadata.tissue == 'blood') & 
-#                         (hubs.metadata.cell.str.contains('monocyte|neutrophil', case=False))]
-#myeloid_hub
-#hubs.merge_hubs(myeloid_hub, new_name = 'blood_myeloid')
-
-
-#tcell_hub = hubs.metadata[(hubs.metadata.tissue == 'blood') & 
-#                         (hubs.metadata.cell.str.contains('t cell', case=False))]
-#tcell_hub
-#hubs.merge_hubs(tcell_hub, new_name = 'blood_tcell')
-
-#nk_hub = hubs.metadata[(hubs.metadata.tissue == 'blood') & 
-#                         (hubs.metadata.cell.str.contains('nk cell', case=False))]
-#nk_hub
-#hubs.merge_hubs(nk_hub, new_name = 'blood_nk')
-
-#bcell_hub = hubs.metadata[(hubs.metadata.tissue == 'blood') & 
-#                         (hubs.metadata.cell.str.contains('memory b cell|naive b cell', case=False))]
-#bcell_hub
-#hubs.merge_hubs(bcell_hub, new_name = 'blood_b')
-
-
-# In[8]:
-
-
+# load blood hub
 blood_hub = hubs.metadata[(hubs.metadata.tissue == 'blood')]
 blood_hub
+
+# merge blood hub
 hubs.merge_hubs(blood_hub, new_name = 'blood')
-
-
-# In[9]:
-
-
 gene_list = hubs.get_genes(('blood')[:10])
-
-
-# In[10]:
-
-
 gene_list
 
-
-# In[11]:
-
-
+# export blood hub gene list
 df = pd.DataFrame(gene_list, columns=['Gene'])
 df.to_csv('blood_merged_gene_list.csv', index=False)
 
-
-# In[12]:
-
-
-#hubs.hubs['blood'][:10]
-
-
-# In[13]:
-
-
-#hubs.hubs['blood_pDC'][:10]
-
-
-# In[14]:
-
-
-#hubs.hubs['blood_myeloid'][:10]
-
-
-# In[15]:
-
-
-#hubs.hubs['blood_tcell'][:10]
-
-
-# In[16]:
-
-
-#hubs.hubs['blood_nk'][:10]
-
-
-# In[17]:
-
-
-#hubs.hubs['blood_b'][:10]
-
-
-# In[18]:
-
-
-# Load your h5ad file
+# Load atlas data
 adata = sc.read_h5ad('adata_raw_age_filt_500.h5ad')
 # not with >=500 counts
 #adata = sc.read_h5ad('adata_with_raw_age_filtered.h5ad')
