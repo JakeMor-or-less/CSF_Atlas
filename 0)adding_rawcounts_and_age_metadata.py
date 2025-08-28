@@ -1,62 +1,26 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# In[1]:
-
-
 #load modules
 import os
 import random 
 import senepy as sp
 import scanpy as sc
 import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
-import numpy as np
 
 # Set working directory
 os.chdir('/fs/scratch/PAS2598/Morales/CSF_workspace/csf')
 
-# Check current working directory
-print(os.getcwd())
-
+# Set seed
 random.seed(42)
 
-
-# In[2]:
-
-
+# Load data and check the structure
 adata = sc.read_h5ad('atlas.h5ad')
-
-
-# In[3]:
-
-
-adata
-
-
-# In[4]:
-
-
 adata.obs.head()
 
-
-# In[5]:
-
-
+# Load raw counts
 raw_counts = sc.read_h5ad('atlas_raw_counts.h5ad')
 
+# check raw counts structure 
 raw_counts.obs.head()
-
-
-# In[6]:
-
-
 raw_counts
-
-
-# In[7]:
-
 
 # Check cell ID formats
 print("=== CELL ID FORMAT INVESTIGATION ===")
@@ -118,14 +82,9 @@ if 'sample' in raw_counts.obs.columns:
         print("Can proceed with sample-level pseudobulk!")
         print(f"Common samples: {list(sample_overlap)[:5]}")
 
-
-# In[8]:
-
-
 # Add raw counts to your processed adata object
 print("=== ADDING RAW COUNTS TO PROCESSED ADATA ===")
 
-# Since alignment is perfect, we can directly add the layer
 # Make sure both objects have the same cell and gene order
 print("Ensuring same order...")
 
@@ -155,139 +114,29 @@ if test_gene in adata.var_names:
     raw_values = adata.layers['raw_counts'][:10, gene_idx]  # First 10 cells
     print(f"\nSample raw values for {test_gene}: {raw_values}")
 
-
-# In[9]:
-
-
+# check the structure again
+adata.obs.head()
 adata
 
-
-# In[10]:
-
-
-adata.write('adata_with_raw.h5ad')
-
-
-# In[11]:
-
-
-# Read your age CSV
+# Read the age CSV
 age_df = pd.read_csv('atlas_age.csv')
 print(age_df.head())
-
-
-# In[12]:
-
-
-# Check what samples you have in your adata
-print("Samples in adata:", adata.obs['sample'].unique())
-
-
-# In[13]:
-
 
 # Merge the dataframes
 adata.obs = adata.obs.merge(age_df, on='sample', how='left')
 
-
-# In[14]:
-
-
-# 4. Check that it worked
+# Check that it worked
 print("Age column added:", 'age' in adata.obs.columns)
 print("Sample ages:", adata.obs[['sample', 'age']].head())
-
-
-# In[15]:
-
-
-# Check a few examples
 print(adata.obs[['sample', 'age']].head(10))
 
 # Verify all cells from same sample have same age
 sample_ages = adata.obs.groupby('sample')['age'].nunique()
 print("Each sample should have only 1 age:", sample_ages.max() == 1)
 
-
-# In[16]:
-
-
-# Same age group creation as before
+# age group creation as before
 adata.obs['age_comparison'] = 'exclude'  # default
 adata.obs.loc[adata.obs['age'] <= 25, 'age_comparison'] = '≤25 years'
 adata.obs.loc[adata.obs['age'] >= 60, 'age_comparison'] = '≥60 years'
 
-
-# In[17]:
-
-
-adata.write('adata_with_raw_age_filtered.h5ad')
-
-
-# In[18]:
-
-
-# Need to exclude samples > 500 cells total 
-
-
-# In[19]:
-
-
-# Get cell counts per sample
-cells_per_sample = adata.obs['sample'].value_counts()
-
-# Find samples with 500 or more cells
-samples_to_keep = cells_per_sample[cells_per_sample >= 500].index
-
-# Filter the data to only include samples with >= 500 cells
-adata_500 = adata[adata.obs['sample'].isin(samples_to_keep)].copy()
-
-print(f"Original samples: {len(cells_per_sample)}")
-print(f"Samples with ≥500 cells: {len(samples_to_keep)}")
-print(f"Original cells: {adata.n_obs}")
-print(f"Cells after filtering: {adata_500.n_obs}")
-
-
-# In[20]:
-
-
-# Count cells per sample
-print("Cells per sample:")
-print(adata_500.obs['sample'].value_counts().sort_index())
-
-# Or get it as a sorted table
-sample_counts = adata_500.obs['sample'].value_counts().sort_index()
-print(f"\nTotal samples: {len(sample_counts)}")
-print(f"Cells per sample range: {sample_counts.min()} - {sample_counts.max()}")
-print(f"Mean cells per sample: {sample_counts.mean():.1f}")
-
-
-# In[21]:
-
-
-# Get detailed sample information
-sample_info_filtered = adata_500.obs.groupby('sample').agg({
-    'age': 'first',
-    'sex': 'first',
-    'disease': 'first',
-    'disease_group': 'first',
-    'sample': 'count'  # This counts cells per sample
-}).rename(columns={'sample': 'cell_count'}).sort_values('age')
-
-print("Detailed sample information:")
-print(adata_500)
-
-
-# In[22]:
-
-
-# Check cell overlap
-print(f"Processed cells: {len(adata_500)}")
-print(f"Raw count cells: {len(adata_500.layers['raw_counts'])}")
-
-
-# In[23]:
-
-
-adata_500.write('adata_raw_age_filt_500.h5ad')
-
+adata.write('adata_raw_age.h5ad')
