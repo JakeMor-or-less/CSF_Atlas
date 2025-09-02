@@ -1,2 +1,9 @@
 # downloading the atlas dataset from synapse 
 
+module load miniconda3/24.1.2-py310
+
+conda activate senepy
+
+pip install synapseclient
+
+synapse get syn54032670  
